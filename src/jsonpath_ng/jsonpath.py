@@ -52,6 +52,24 @@ class JSONPath:
     def update_or_create(self, data: typing.Any, val: typing.Any) -> typing.Any:
         return self.update(data, val)
 
+    def _update_with_root(
+        self, data: typing.Any, val: typing.Any, root: typing.Any
+    ) -> typing.Any:
+        """
+        Like `update()`, but also told the root of the query argument.
+
+        Only paths that evaluate `$` (filters) need it, so the default ignores it.
+        """
+
+        return self.update(data, val)
+
+    def _filter_with_root(
+        self, fn: FilterFunction, data: Container, root: typing.Any
+    ) -> Container | None:
+        """Like `filter()`, but also told the root of the query argument."""
+
+        return self.filter(fn, data)
+
     def filter(self, fn: FilterFunction, data: Container) -> Container | None:
         """
         Returns `data` with the specified path filtering nodes according
@@ -328,8 +346,13 @@ class Child(JSONPath):
         ]
 
     def update(self, data: typing.Any, val: typing.Any) -> typing.Any:
+        return self._update_with_root(data, val, data)
+
+    def _update_with_root(
+        self, data: typing.Any, val: typing.Any, root: typing.Any
+    ) -> typing.Any:
         for datum in self.left.find(data):
-            self.right.update(datum.value, val)
+            self.right._update_with_root(datum.value, val, root)
         return data
 
     def find_or_create(self, datum: typing.Any) -> list[DatumInContext]:
@@ -350,8 +373,13 @@ class Child(JSONPath):
         return _clean_list_keys(data)
 
     def filter(self, fn: FilterFunction, data: Container) -> Container | None:
+        return self._filter_with_root(fn, data, data)
+
+    def _filter_with_root(
+        self, fn: FilterFunction, data: Container, root: typing.Any
+    ) -> Container | None:
         for datum in self.left.find(data):
-            self.right.filter(fn, datum.value)
+            self.right._filter_with_root(fn, datum.value, root)
         return data
 
     def __eq__(self, other: typing.Any) -> bool:
@@ -534,6 +562,11 @@ class Descendants(JSONPath):
         return False
 
     def update(self, data: typing.Any, val: typing.Any) -> typing.Any:
+        return self._update_with_root(data, val, data)
+
+    def _update_with_root(
+        self, data: typing.Any, val: typing.Any, root: typing.Any
+    ) -> typing.Any:
         # Get all left matches into a list.
         # Some `find()` implementations (e.g. `Filter`, `SortedThis`)
         # return a bare datum instead of a list, so this is typed as `Any`.
@@ -553,7 +586,7 @@ class Descendants(JSONPath):
             if not isinstance(node, (list, dict)):
                 continue
 
-            self.right.update(node, val)
+            self.right._update_with_root(node, val, root)
 
             # Manually visit every child and recurse just the right-hand pattern.
             # The children are read after the update, which may have changed them.
@@ -562,6 +595,11 @@ class Descendants(JSONPath):
         return data
 
     def filter(self, fn: FilterFunction, data: Container) -> Container | None:
+        return self._filter_with_root(fn, data, data)
+
+    def _filter_with_root(
+        self, fn: FilterFunction, data: Container, root: typing.Any
+    ) -> Container | None:
         # Get all left matches into a list.
         # Some `find()` implementations (e.g. `Filter`, `SortedThis`)
         # return a bare datum instead of a list, so this is typed as `Any`.
@@ -579,7 +617,7 @@ class Descendants(JSONPath):
             if not isinstance(node, (list, dict)):
                 continue
 
-            self.right.filter(fn, node)
+            self.right._filter_with_root(fn, node, root)
 
             # The children are read after the filter, which may have removed some.
             stack.extend(reversed(node if isinstance(node, list) else node.values()))
