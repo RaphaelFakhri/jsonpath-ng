@@ -875,6 +875,8 @@ class Index(JSONPath):
         return rv
 
     def update(self, data: typing.Any, val: typing.Any) -> typing.Any:
+        if not isinstance(data, list):
+            return data
         return self._update_base(data, val, create=False)
 
     def update_or_create(self, data: typing.Any, val: typing.Any) -> typing.Any:
@@ -889,12 +891,14 @@ class Index(JSONPath):
             self._pad_value(data)
         if callable(val):
             for index in self.indices:
+                if not -len(data) <= index < len(data):
+                    continue
                 val_result = val(data[index], data, index)
                 if val_result is not None:
                     data[index] = val_result
         else:
             for index in self.indices:
-                if len(data) > index:
+                if -len(data) <= index < len(data):
                     try:
                         if isinstance(val, list):
                             # allows somelist[5,1,2] = [
