@@ -13,6 +13,7 @@
 
 import operator
 import re
+import typing as t
 import warnings
 
 from .. import DatumInContext
@@ -21,7 +22,11 @@ from .. import Index
 from .. import JSONPath
 from .. import Root
 
-OPERATOR_MAP = {
+StringOperator: t.TypeAlias = t.Literal["!=", "==", "=", "<=", "<", ">=", ">"]
+
+OPERATOR_MAP: dict[
+    StringOperator | t.Literal["=~"], t.Callable[[t.Any, t.Any], bool]
+] = {
     "!=": operator.ne,
     "==": operator.eq,
     "=": operator.eq,
@@ -38,7 +43,7 @@ OPERATOR_MAP = {
 # Only numbers and strings are ordered, so for JSON null and for booleans
 # the ordering comparisons reduce to equality.
 # Each function receives whether the two values are equal.
-EQUALITY_ONLY_OPERATOR_MAP = {
+EQUALITY_ONLY_OPERATOR_MAP: dict[str, t.Callable[[t.Any], bool]] = {
     "!=": operator.not_,
     "==": bool,
     "=": bool,
@@ -47,6 +52,63 @@ EQUALITY_ONLY_OPERATOR_MAP = {
     "<": lambda equal: False,
     ">": lambda equal: False,
 }
+
+
+def _is_number(value: t.Any) -> bool:
+    """
+    Determine if a value is a number.
+
+    In Python, bool is a subclass of int and would satisfy `isinstance(..., int)`.
+    It's therefore necessary to restrict bool when determining if a value is an int,
+    and this function exists to ensure co.
+    """
+
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def _equal(left: t.Any, right: t.Any) -> bool:
+    """Compare two JSON values as defined by RFC 9535 section 2.3.5.2.2.
+
+    Values of different types are never equal,
+    so booleans must be explicitly handled to prevent comparing bools and ints.
+    For example, `True` and `1` must never compare as equal.
+    """
+
+    pairs = [(left, right)]
+    while pairs:
+        left, right = pairs.pop()
+        if isinstance(left, bool) or isinstance(right, bool):
+            # `is` is used here to prevent `True` from comparing as equal to `1`.
+            # It works because bools are singletons in Python.
+            if left is not right:
+                return False
+        elif isinstance(left, list) and isinstance(right, list):
+            if len(left) != len(right):
+                return False
+            pairs.extend(zip(left, right))
+        elif isinstance(left, dict) and isinstance(right, dict):
+            if left.keys() != right.keys():
+                return False
+            pairs.extend((value, right[key]) for key, value in left.items())
+        elif isinstance(left, (list, dict)) or isinstance(right, (list, dict)):
+            return False
+        elif left != right:
+            return False
+    return True
+
+
+def _compare(op: StringOperator | t.Literal["=~"], left: t.Any, right: t.Any) -> bool:
+    """Compare two JSON values as defined by RFC 9535 section 2.3.5.2.2.
+
+    Only two numbers or two strings are ordered.
+    For all other values, the ordering comparisons reduce to equality.
+    """
+
+    if (_is_number(left) and _is_number(right)) or (
+        isinstance(left, str) and isinstance(right, str)
+    ):
+        return OPERATOR_MAP[op](left, right)
+    return EQUALITY_ONLY_OPERATOR_MAP[op](_equal(left, right))
 
 
 class Filter(JSONPath):
@@ -75,6 +137,8 @@ class Filter(JSONPath):
                 paths_to_visit.extend(path.expressions)
             elif isinstance(path, Expression):
                 paths_to_visit.append(path.target)
+                if isinstance(path.value, JSONPath):
+                    paths_to_visit.append(path.value)
             else:
                 if (left := getattr(path, "left", None)) is not None:
                     paths_to_visit.append(left)
@@ -182,6 +246,9 @@ class Expression(JSONPath):
         if self.op == "!":
             return [] if found else [wrapped_datum]
 
+        if isinstance(self.value, JSONPath):
+            return self._find_with_query_operand(wrapped_datum, found)
+
         # A comparison with the literal `null` has `None` as its value, which is
         # otherwise only the case for the existence test and negation handled above.
         null_comparison = self.op is not None and self.value is None
@@ -219,6 +286,26 @@ class Expression(JSONPath):
                 result.append(data)
 
         return result
+
+    def _find_with_query_operand(self, datum, found):
+        """Compare the values found by the target to those found by the query operand.
+
+        RFC 9535 section 2.3.5.2.2 says that two empty nodelists are equal,
+        and that an empty nodelist is not equal to any value.
+        """
+
+        values = [match.value for match in self.value.find(datum)]
+        if not found or not values:
+            # Nothing is equal to `null`, to `false`, or to anything else.
+            if EQUALITY_ONLY_OPERATOR_MAP[self.op](not found and not values):
+                return found or [datum]
+            return []
+
+        return [
+            match
+            for match in found
+            if any(_compare(self.op, match.value, value) for value in values)
+        ]
 
     def __eq__(self, other):
         return (
