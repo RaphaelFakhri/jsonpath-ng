@@ -19,6 +19,7 @@ from .. import DatumInContext
 from .. import Fields
 from .. import Index
 from .. import JSONPath
+from .. import Root
 
 OPERATOR_MAP = {
     "!=": operator.ne,
@@ -58,45 +59,103 @@ class Filter(JSONPath):
                 "It will raise an exception in version 2.0.0."
             )
             warnings.warn(msg, DeprecationWarning, stacklevel=2)
-        self.expressions = expressions
+        self.expressions = list(expressions)
+
+    def _references_root(self) -> bool:
+        """Identify whether the filter expressions reference the root identifier."""
+
+        paths_to_visit: list[JSONPath] = list(self.expressions)
+
+        while paths_to_visit:
+            path = paths_to_visit.pop()
+            if isinstance(path, Root):
+                return True
+
+            if isinstance(path, Filter):
+                paths_to_visit.extend(path.expressions)
+            elif isinstance(path, Expression):
+                paths_to_visit.append(path.target)
+            else:
+                if (left := getattr(path, "left", None)) is not None:
+                    paths_to_visit.append(left)
+                if (right := getattr(path, "right", None)) is not None:
+                    paths_to_visit.append(right)
+
+        return False
 
     def find(self, datum):
         datum = DatumInContext.wrap(datum)
 
         if isinstance(datum.value, dict):
-            return [
-                DatumInContext(value, path=Fields(key), context=datum)
-                for key, value in datum.value.items()
-                if all(expression.find(value) for expression in self.expressions)
-            ]
+            candidates = datum.value.items()
+            make_path = Fields
         elif isinstance(datum.value, list):
-            return [
-                DatumInContext(value, path=Index(index), context=datum)
-                for index, value in enumerate(datum.value)
-                if all(expression.find(value) for expression in self.expressions)
-            ]
+            candidates = enumerate(datum.value)
+            make_path = Index
         else:
             return []
 
+        # RFC 9535 section 1.4.1: `$` is the root of the query argument,
+        # so an expression that uses it must be evaluated on a candidate
+        # that is linked to its parent.
+        if self._references_root():
+            results = []
+            for key, value in candidates:
+                candidate = DatumInContext(value, path=make_path(key), context=datum)
+                if all(expression.find(candidate) for expression in self.expressions):
+                    results.append(candidate)
+            return results
+
+        # Otherwise, avoid creating candidates that will not match.
+        return [
+            DatumInContext(value, path=make_path(key), context=datum)
+            for key, value in candidates
+            if all(expression.find(value) for expression in self.expressions)
+        ]
+
+    @staticmethod
+    def _datum(data, root):
+        """Wrap *data* so that `$` resolves to *root*."""
+
+        if data is root:
+            return DatumInContext(data)
+        return DatumInContext(data, context=DatumInContext(root))
+
     def filter(self, fn, data):
-        # NOTE: We reverse the order just to make sure the indexes are preserved upon
-        #  removal.
-        for datum in reversed(self.find(data)):
+        return self._filter_with_root(fn, data, data)
+
+    def _filter_with_root(self, fn, data, root):
+        # Reverse the order to ensure indices are preserved upon removal.
+        for datum in reversed(self.find(self._datum(data, root))):
             datum.path.filter(fn, data)
         return data
 
     def update(self, data, val):
+        return self._update_with_root(data, val, data)
+
+    def _update_with_root(self, data, val, root):
         if type(data) is list:
-            for index, item in enumerate(data):
-                shouldUpdate = len(self.expressions) == len(
-                    list(filter(lambda x: x.find(item), self.expressions))
-                )
-                if shouldUpdate:
-                    if callable(val):
-                        val(data[index], data, index)
-                    else:
-                        data[index] = val
+            if self._references_root():
+                # Evaluate `$` against the root, as `find()` does.
+                parent = self._datum(data, root)
+                for index, item in enumerate(data):
+                    candidate = DatumInContext(item, path=Index(index), context=parent)
+                    if all(
+                        expression.find(candidate) for expression in self.expressions
+                    ):
+                        self._set(data, index, val)
+            else:
+                for index, item in enumerate(data):
+                    if all(expression.find(item) for expression in self.expressions):
+                        self._set(data, index, val)
         return data
+
+    @staticmethod
+    def _set(data, index, val):
+        if callable(val):
+            val(data[index], data, index)
+        else:
+            data[index] = val
 
     def __repr__(self):
         return f"{self.__class__.__name__}({self.expressions!r})"
