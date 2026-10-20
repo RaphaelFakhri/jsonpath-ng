@@ -1,5 +1,8 @@
+from __future__ import annotations
+
 import logging
 import sys
+import typing
 import warnings
 
 import jsonpath_ng._ply.yacc
@@ -19,10 +22,15 @@ from jsonpath_ng.jsonpath import Where
 from jsonpath_ng.jsonpath import WhereNot
 from jsonpath_ng.lexer import JsonPathLexer
 
+if typing.TYPE_CHECKING:
+    from ._ply_types import _Parser
+    from ._ply_types import _Production
+    from ._ply_types import _Token
+
 logger = logging.getLogger(__name__)
 
 
-def parse(string):
+def parse(string: str) -> JSONPath:
     return JsonPathParser().parse(string)
 
 
@@ -36,7 +44,9 @@ class JsonPathParser:
     # The pre-generated LALR table; see `assets/generate_ply_tables.py`.
     _ply_table_module = "jsonpath_ng._ply_tables.parser_table"
 
-    def __init__(self, debug=None, lexer_class=None) -> None:
+    def __init__(
+        self, debug: bool | None = None, lexer_class: type[JsonPathLexer] | None = None
+    ) -> None:
         if debug is not None:
             msg = (
                 "The `debug` parameter is deprecated. "
@@ -49,7 +59,7 @@ class JsonPathParser:
         )  # Crufty but works around statefulness in PLY
 
         # Load the pre-generated parse table. Nothing is generated or written.
-        self.parser = jsonpath_ng._ply.yacc.yacc(
+        self.parser: _Parser = jsonpath_ng._ply.yacc.yacc(  # type: ignore[no-untyped-call]
             module=self,
             debug=False,
             tabmodule=self._ply_table_module,
@@ -59,11 +69,11 @@ class JsonPathParser:
             errorlog=logger,
         )
 
-    def parse(self, string, lexer=None) -> JSONPath:
+    def parse(self, string: str, lexer: JsonPathLexer | None = None) -> JSONPath:
         lexer = lexer or self.lexer_class()
         return self.parse_token_stream(lexer.tokenize(string))
 
-    def parse_token_stream(self, token_iterator):
+    def parse_token_stream(self, token_iterator: typing.Iterator[_Token]) -> JSONPath:
         return self.parser.parse(lexer=IteratorToTokenStream(token_iterator))
 
     # ===================== PLY Parser specification =====================
@@ -78,7 +88,7 @@ class JsonPathParser:
         ("left", "WHERENOT"),
     ]
 
-    def p_error(self, t):
+    def p_error(self, t: _Token | None) -> typing.Never:
         if t is None:
             raise JsonPathParserError("Parse error near the end of string!")
         raise JsonPathParserError(
@@ -86,7 +96,7 @@ class JsonPathParser:
             % (t.lineno, t.col, t.value, t.type)
         )
 
-    def p_jsonpath_binop(self, p):
+    def p_jsonpath_binop(self, p: _Production) -> None:
         """jsonpath : jsonpath '.' jsonpath
         | jsonpath DOUBLEDOT jsonpath
         | jsonpath WHERE jsonpath
@@ -94,25 +104,27 @@ class JsonPathParser:
         | jsonpath '|' jsonpath
         | jsonpath '&' jsonpath"""
         op = p[2]
+        left = typing.cast(JSONPath, p[1])
+        right = typing.cast(JSONPath, p[3])
 
         if op == ".":
-            p[0] = Child(p[1], p[3])
+            p[0] = Child(left, right)
         elif op == "..":
-            p[0] = Descendants(p[1], p[3])
+            p[0] = Descendants(left, right)
         elif op == "where":
-            p[0] = Where(p[1], p[3])
+            p[0] = Where(left, right)
         elif op == "wherenot":
-            p[0] = WhereNot(p[1], p[3])
+            p[0] = WhereNot(left, right)
         elif op == "|":
-            p[0] = Union(p[1], p[3])
+            p[0] = Union(left, right)
         elif op == "&":
-            p[0] = Intersect(p[1], p[3])
+            p[0] = Intersect(left, right)
 
-    def p_jsonpath_fields(self, p):
+    def p_jsonpath_fields(self, p: _Production) -> None:
         "jsonpath : fields_or_any"
-        p[0] = Fields(*p[1])
+        p[0] = Fields(*typing.cast(list[str], p[1]))
 
-    def p_jsonpath_named_operator(self, p):
+    def p_jsonpath_named_operator(self, p: _Production) -> None:
         "jsonpath : NAMED_OPERATOR"
         if p[1] == "this":
             p[0] = This()
@@ -124,90 +136,93 @@ class JsonPathParser:
                 % (p[1], p.lineno(1), p.lexpos(1))
             )
 
-    def p_jsonpath_root(self, p):
+    def p_jsonpath_root(self, p: _Production) -> None:
         "jsonpath : '$'"
         p[0] = Root()
 
-    def p_jsonpath_idx(self, p):
+    def p_jsonpath_idx(self, p: _Production) -> None:
         "jsonpath : '[' idx ']'"
-        p[0] = Index(*p[2])
+        p[0] = Index(*typing.cast(list[int], p[2]))
 
-    def p_jsonpath_slice(self, p):
+    def p_jsonpath_slice(self, p: _Production) -> None:
         "jsonpath : '[' slice ']'"
-        p[0] = p[2]
+        p[0] = typing.cast(Slice, p[2])
 
-    def p_jsonpath_fieldbrackets(self, p):
+    def p_jsonpath_fieldbrackets(self, p: _Production) -> None:
         "jsonpath : '[' fields ']'"
-        p[0] = Fields(*p[2])
+        p[0] = Fields(*typing.cast(list[str], p[2]))
 
-    def p_jsonpath_child_fieldbrackets(self, p):
+    def p_jsonpath_child_fieldbrackets(self, p: _Production) -> None:
         "jsonpath : jsonpath '[' fields ']'"
-        p[0] = Child(p[1], Fields(*p[3]))
+        p[0] = Child(typing.cast(JSONPath, p[1]), Fields(*typing.cast(list[str], p[3])))
 
-    def p_jsonpath_child_idxbrackets(self, p):
+    def p_jsonpath_child_idxbrackets(self, p: _Production) -> None:
         "jsonpath : jsonpath '[' idx ']'"
-        p[0] = Child(p[1], Index(*p[3]))
+        p[0] = Child(typing.cast(JSONPath, p[1]), Index(*typing.cast(list[int], p[3])))
 
-    def p_jsonpath_child_slicebrackets(self, p):
+    def p_jsonpath_child_slicebrackets(self, p: _Production) -> None:
         "jsonpath : jsonpath '[' slice ']'"
-        p[0] = Child(p[1], p[3])
+        p[0] = Child(typing.cast(JSONPath, p[1]), typing.cast(Slice, p[3]))
 
-    def p_jsonpath_parens(self, p):
+    def p_jsonpath_parens(self, p: _Production) -> None:
         "jsonpath : '(' jsonpath ')'"
-        p[0] = p[2]
+        p[0] = typing.cast(JSONPath, p[2])
 
     # Because fields in brackets cannot be '*' - that is reserved for array indices
-    def p_fields_or_any(self, p):
+    def p_fields_or_any(self, p: _Production) -> None:
         """fields_or_any : fields
         | '*'
         | NUMBER"""
-        if p[1] == "*":
+        p1 = p[1]
+        if p1 == "*":
             p[0] = ["*"]
-        elif isinstance(p[1], int):
-            p[0] = [str(p[1])]
+        elif isinstance(p1, int):
+            p[0] = [str(p1)]
         else:
-            p[0] = p[1]
+            p[0] = typing.cast(list[int | str], p1)
 
-    def p_fields_id(self, p):
+    def p_fields_id(self, p: _Production) -> None:
         "fields : ID"
-        p[0] = [p[1]]
+        p[0] = [typing.cast(str, p[1])]
 
-    def p_fields_comma(self, p):
+    def p_fields_comma(self, p: _Production) -> None:
         "fields : fields ',' fields"
-        p[0] = p[1] + p[3]
+        p[0] = typing.cast(list[str] | list[int], p[1]) + typing.cast(
+            list[str] | list[int], p[3]
+        )
 
-    def p_idx(self, p):
+    def p_idx(self, p: _Production) -> None:
         "idx : NUMBER"
-        p[0] = [p[1]]
+        p[0] = [typing.cast(int, p[1])]
 
-    def p_idx_comma(self, p):
+    def p_idx_comma(self, p: _Production) -> None:
         "idx : idx ',' idx"
-        p[0] = p[1] + p[3]
+        p[0] = typing.cast(list[int], p[1]) + typing.cast(list[int], p[3])
 
-    def p_slice_any(self, p):
+    def p_slice_any(self, p: _Production) -> None:
         "slice : '*'"
         p[0] = Slice()
 
-    def p_slice(self, p):  # Currently does not support `step`
+    def p_slice(self, p: _Production) -> None:  # Currently does not support `step`
         """slice : maybe_int ':' maybe_int
         | maybe_int ':' maybe_int ':' maybe_int"""
-        p[0] = Slice(*p[1::2])
+        p[0] = Slice(*typing.cast(list[int | None], p[1::2]))
 
-    def p_maybe_int(self, p):
+    def p_maybe_int(self, p: _Production) -> None:
         """maybe_int : NUMBER
         | empty"""
-        p[0] = p[1]
+        p[0] = typing.cast(int | None, p[1])
 
-    def p_empty(self, p):
+    def p_empty(self, p: _Production) -> None:
         "empty :"
         p[0] = None
 
 
 class IteratorToTokenStream:
-    def __init__(self, iterator) -> None:
+    def __init__(self, iterator: typing.Iterator[_Token]) -> None:
         self.iterator = iterator
 
-    def token(self):
+    def token(self) -> _Token | None:
         try:
             return next(self.iterator)
         except StopIteration:

@@ -23,7 +23,7 @@ Quick Start
 
 To install, use pip:
 
-.. code:: bash
+..  code:: bash
 
     $ pip install --upgrade jsonpath-ng
 
@@ -33,9 +33,7 @@ Usage
 
 Basic examples:
 
-.. code:: python
-
-    $ python
+..  code:: pycon
 
     >>> from jsonpath_ng import jsonpath, parse
 
@@ -85,14 +83,12 @@ Basic examples:
 
 Using the extended parser:
 
-.. code:: python
+..  code:: pycon
 
-  $ python
+    >>> from jsonpath_ng.ext import parse
 
-  >>> from jsonpath_ng.ext import parse
-
-  # A robust parser, not just a regex. (Makes powerful extensions possible; see below)
-  >>> jsonpath_expr = parse('foo[*].baz')
+    # A robust parser, not just a regex. (Makes powerful extensions possible; see below)
+    >>> jsonpath_expr = parse('foo[*].baz')
 
 
 JSONPath Syntax
@@ -262,7 +258,9 @@ When operators are used, a jsonpath must be be fully defined otherwise
 jsonpath-rw-ext can't known if the expression is a string or a jsonpath field,
 in this case it will choice string as type.
 
-Example with data::
+Example with data:
+
+..  code-block:: json
 
     {
         'cow': 'foo',
@@ -279,7 +277,9 @@ About arithmetic and list
 
 Arithmetic can be used against two lists if they have the same size.
 
-Example with data::
+Example with data:
+
+..  code-block:: json
 
     {'objects': [
         {'cow': 2, 'cat': 3},
@@ -288,42 +288,18 @@ Example with data::
 
 | ``$.objects[\*].cow + $.objects[\*].cat`` returns ``[6, 9]``
 
-More to explore
----------------
-
-There are way too many JSONPath implementations out there to discuss.
-Some are robust, some are toy projects that still work fine, some are
-exercises. There will undoubtedly be many more. This one is made for use
-in released, maintained code, and in particular for programmatic access
-to the abstract syntax and extension. But JSONPath at its simplest just
-isn't that complicated, so you can probably use any of them
-successfully. Why not this one?
-
-The original proposal, as far as I know:
-
--  `JSONPath - XPath for
-   JSON <http://goessner.net/articles/JSONPath/>`__ by Stefan Goessner.
-
 Other examples
 --------------
 
 Loading json data from file
 
-.. code:: python
+..  code:: python
 
     import json
     d = json.loads('{"foo": [{"baz": 1}, {"baz": 2}]}')
     # or
     with open('myfile.json') as f:
         d = json.load(f)
-
-Special note about PLY and docstrings
--------------------------------------
-
-The main parsing toolkit underlying this library,
-`PLY <https://github.com/dabeaz/ply>`__, does not work with docstrings
-removed. For example, ``PYTHONOPTIMIZE=2`` and ``python -OO`` will both
-cause a failure.
 
 Contributors
 ------------
@@ -356,6 +332,8 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 
-.. _RFC 9535: https://www.rfc-editor.org/info/rfc9535/
-.. _`jsonpath-rw`: https://github.com/kennknowles/python-jsonpath-rw
-.. _`jsonpath-rw-ext`: https://pypi.python.org/pypi/jsonpath-rw-ext/
+..  Links
+..  -----
+..  _RFC 9535: https://www.rfc-editor.org/info/rfc9535/
+..  _`jsonpath-rw`: https://github.com/kennknowles/python-jsonpath-rw
+..  _`jsonpath-rw-ext`: https://pypi.python.org/pypi/jsonpath-rw-ext/
