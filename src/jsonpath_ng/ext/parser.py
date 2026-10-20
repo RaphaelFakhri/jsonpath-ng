@@ -19,11 +19,14 @@ import warnings
 from .. import Child
 from .. import Descendants
 from .. import Fields
+from .. import Index
 from .. import JSONPath
+from .. import Root
 from .. import This
 from .. import lexer
 from .. import parser
 from .._ply_types import _Production
+from ..exceptions import JsonPathParserError
 from . import arithmetic as _arithmetic
 from . import filter as _filter
 from . import iterable as _iterable
@@ -151,17 +154,56 @@ class ExtendedJsonPathParser(parser.JsonPathParser):
         | jsonpath FILTER_OP NUMBER
         | jsonpath FILTER_OP BOOL
         | jsonpath FILTER_OP NULL
+        | jsonpath FILTER_OP singular_query
         """
         if len(p) == 2:
             left, op, right = p[1], None, None
         else:
             __, left, op, right = p
+            if p.slice[3].type == "singular_query" and op == "=~":
+                # The regex operator is not part of RFC 9535
+                # and takes a literal pattern.
+                raise JsonPathParserError(
+                    "The regex operator requires a literal pattern, not a query"
+                )
             if p.slice[3].type == "NULL":
                 # The literal `null` compares as JSON null, which `Expression`
                 # represents as `None`. The regex operator is not part of RFC 9535
                 # and has always taken the bare word as the text of its pattern.
                 right = "null" if op == "=~" else None
         p[0] = _filter.Expression(left, op, right)
+
+    def p_singular_query_identifier(self, p: _ExtProduction) -> None:
+        """singular_query : '@'
+        | '$'
+        """
+        # RFC 9535 section 2.3.5.1: a comparison operand is a *singular* query,
+        # which starts with `@` or `$` and has only name and index segments.
+        p[0] = This() if p[1] == "@" else Root()
+
+    def p_singular_query_name(self, p: _ExtProduction) -> None:
+        "singular_query : singular_query '.' singular_name"
+        p[0] = Child(typing.cast(JSONPath, p[1]), Fields(typing.cast(str, p[3])))
+
+    def p_singular_query_bracketed_name(self, p: _ExtProduction) -> None:
+        "singular_query : singular_query '[' ID ']'"
+        p[0] = Child(typing.cast(JSONPath, p[1]), Fields(typing.cast(str, p[3])))
+
+    def p_singular_query_index(self, p: _ExtProduction) -> None:
+        "singular_query : singular_query '[' NUMBER ']'"
+        p[0] = Child(typing.cast(JSONPath, p[1]), Index(typing.cast(int, p[3])))
+
+    def p_singular_name(self, p: _ExtProduction) -> None:
+        """singular_name : ID
+        | NULL
+        | BOOL
+        """
+        # `null`, `true`, and `false` are literals in filter comparisons
+        # but are still valid field names.
+        if isinstance(p[1], bool):
+            p[0] = "true" if p[1] else "false"
+        else:
+            p[0] = p[1]
 
     def p_fields_null(self, p: _ExtProduction) -> None:
         "fields : NULL"
