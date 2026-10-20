@@ -912,9 +912,22 @@ class Index(JSONPath):
         return data
 
     def filter(self, fn: FilterFunction, data: Container) -> Container:
-        for index in self.indices:
-            if fn(data[index]):
-                data.pop(index)  # relies on mutation :(
+        if not isinstance(data, list):
+            return data
+
+        # Resolve the indices to distinct, valid positions before removing anything.
+        # Although the indices are normalized and deduplicated,
+        # their order is preserved via `dict.fromkeys` in case `fn` tracks state
+        # and depends on the order of the values it evaluates.
+        data_length = len(data)
+        positions = dict.fromkeys(
+            index % data_length
+            for index in self.indices
+            if -data_length <= index < data_length
+        )
+        indices_to_remove = (position for position in positions if fn(data[position]))
+        for position in sorted(indices_to_remove, reverse=True):
+            del data[position]
         return data
 
     def __eq__(self, other: typing.Any) -> bool:

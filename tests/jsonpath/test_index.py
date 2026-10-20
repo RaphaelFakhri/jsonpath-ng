@@ -119,3 +119,93 @@ def test_update_or_create_still_pads_arrays(parse, use_callback):
     replacement = (lambda value, parent, index: 99) if use_callback else 99
     assert parse("[2]").update_or_create(data, replacement) is data
     assert data == [1, {}, 99]
+
+
+@pytest.mark.parametrize(
+    "expression, data", (("[0]", []), ("[2]", [1, 2]), ("[-3]", [1, 2]))
+)
+@parsers
+def test_filter_ignores_out_of_range_indices(parse, expression, data):
+    data = copy.deepcopy(data)
+    original = data.copy()
+
+    def fn(value):
+        pytest.fail("The filter function must not run when no index matches")
+
+    path = parse(expression)
+    assert path.find(data) == []
+    assert path.filter(fn, data) is data
+    assert data == original
+
+
+@pytest.mark.parametrize(
+    "data", ({"value": 1}, {"a": {}}, {0: "x"}, "abc", None, (1, 2))
+)
+@parsers
+def test_filter_ignores_non_arrays(parse, data):
+    data = copy.deepcopy(data)
+    original = copy.deepcopy(data)
+
+    def fn(value):
+        pytest.fail("The filter function must not run when no array matches")
+
+    assert parse("[0]").filter(fn, data) is data
+    assert data == original
+
+
+@pytest.mark.parametrize(
+    "expression, expected",
+    (
+        # The test data are always `['a', 'b', 'c']`.
+        ("[0]", ["b", "c"]),
+        ("[-1]", ["a", "b"]),
+        ("[0,1]", ["c"]),
+        ("[1,0]", ["c"]),
+        ("[0,2]", ["b"]),
+        ("[0,-1]", ["b"]),
+        ("[-1,0]", ["b"]),
+        ("[0,0]", ["b", "c"]),
+        ("[0,-3]", ["b", "c"]),
+        ("[99,0]", ["b", "c"]),
+        ("[0,-99,2]", ["b"]),
+    ),
+)
+@parsers
+def test_filter_removes_every_selected_element(parse, expression, expected):
+    data = ["a", "b", "c"]
+    assert parse(expression).filter(lambda value: True, data) is data
+    assert data == expected
+
+
+@parsers
+def test_filter_function_sees_original_elements(parse):
+    data = [1, 2, 3]
+    seen = []
+
+    def fn(value):
+        seen.append(value)
+        return value != 2
+
+    assert parse("[0,1,2]").filter(fn, data) is data
+    assert seen == [1, 2, 3]
+    assert data == [2]
+
+
+@pytest.mark.parametrize(
+    "expression, data, expected",
+    (
+        ("$..[0]", {"a": [1, 2], "b": {"c": 1}}, {"a": [2], "b": {"c": 1}}),
+        (
+            "$..[1]",
+            {"a": [1, 2, 3], "b": {"c": 1}, "d": [[4, 5], [6]]},
+            {"a": [1, 3], "b": {"c": 1}, "d": [[4]]},
+        ),
+        ("$.a[0]", {"a": {}}, {"a": {}}),
+        ("$.a[5]", {"a": [1]}, {"a": [1]}),
+    ),
+)
+@parsers
+def test_filter_in_compound_queries(parse, expression, data, expected):
+    data = copy.deepcopy(data)
+    assert parse(expression).filter(lambda value: True, data) is data
+    assert data == expected
