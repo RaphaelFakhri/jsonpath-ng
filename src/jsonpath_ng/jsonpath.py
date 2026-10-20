@@ -982,6 +982,9 @@ class Slice(JSONPath):
         if not isinstance(datum.value, (list, tuple)):
             return []
 
+        if self.step == 0:
+            return []
+
         if is_wildcard:
             return [
                 DatumInContext(child, path=Index(i), context=datum)
