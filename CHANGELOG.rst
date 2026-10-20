@@ -10,6 +10,47 @@ CHANGELOG
 
 ..  scriv-insert-here
 
+.. _changelog-1.12.0:
+
+1.12.0 - 2026-10-20
+===================
+
+Added
+-----
+
+*   Support a query on the right-hand side of a filter comparison. (#79)
+
+    For example: ``$.items[?@.a == @.b]`` and ``$.items[?@.v == $.ref.v]``.
+
+    The query must start with ``@`` or ``$``
+    and may only contain name and index segments,
+    as required by RFC 9535.
+
+Fixed
+-----
+
+*   Resolve ``$`` to the root node inside a filter. (#66)
+
+    Previously, ``$`` was incorrectly treated as an alias of ``@``.
+    Use ``@`` to refer to the element being tested.
+
+    This change improves RFC 9535 compliance.
+
+*   Skip index updates for non-list inputs and out-of-range array indices.
+
+*   Fix crashes and other issues with filtering by array index.
+
+    Out-of-range indices and non-array values are now ignored,
+    and queries that select several indices
+    (for example, ``$[0,1]``, ``$[0,2]``, or ``$[0,-3]``)
+    now remove exactly the selected elements.
+
+Project administration
+----------------------
+
+*   Add type annotations for the PLY lexers and parsers.
+*   Add type annotations to many of the JSONPath interfaces.
+
 .. _changelog-1.11.0:
 
 1.11.0 - 2026-10-16
