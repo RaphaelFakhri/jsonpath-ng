@@ -253,8 +253,9 @@ class Expression(JSONPath):
         # otherwise only the case for the existence test and negation handled above.
         null_comparison = self.op is not None and self.value is None
         if not found:
-            # RFC 9535 section 2.3.5.2.2: a missing value is not equal to `null`.
-            return [wrapped_datum] if null_comparison and self.op == "!=" else []
+            # RFC 9535 section 2.3.5.2.2: an empty nodelist is not equal to any value,
+            # including `null`, so only `!=` is true when the member is missing.
+            return [wrapped_datum] if self.op == "!=" else []
         if self.op is None:
             return found
 
@@ -276,13 +277,13 @@ class Expression(JSONPath):
                 if EQUALITY_ONLY_OPERATOR_MAP[self.op](value is self.value):
                     result.append(data)
                 continue
-            if type(self.value) is int and isinstance(value, str):
-                try:
-                    value = int(value)
-                except ValueError:
-                    continue
-
-            if OPERATOR_MAP[self.op](value, self.value):
+            # RFC 9535 section 2.3.5.2.2: a string is never equal to a number,
+            # and only two numbers or two strings are ordered.
+            if self.op == "=~":
+                matched = OPERATOR_MAP["=~"](value, self.value)
+            else:
+                matched = _compare(self.op, value, self.value)
+            if matched:
                 result.append(data)
 
         return result
