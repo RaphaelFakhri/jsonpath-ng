@@ -72,13 +72,14 @@ Basic examples:
 
     # A handy extension: named operators like `parent`
     >>> [match.value for match in parse('a.*.b.`parent`.c').find({'a': {'x': {'b': 1, 'c': 'number one'}, 'y': {'b': 2, 'c': 'number two'}}})]
-    ['number two', 'number one']
+    ['number one', 'number two']
 
     # You can also build expressions directly quite easily
     >>> from jsonpath_ng.jsonpath import Fields
     >>> from jsonpath_ng.jsonpath import Slice
 
-    >>> jsonpath_expr_direct = Fields('foo').child(Slice('*')).child(Fields('baz'))  # This is equivalent
+    >>> parse('foo[*].baz') == Fields('foo').child(Slice()).child(Fields('baz'))
+    True
 
 
 Using the extended parser:
@@ -86,8 +87,6 @@ Using the extended parser:
 ..  code:: pycon
 
     >>> from jsonpath_ng.ext import parse
-
-    # A robust parser, not just a regex. (Makes powerful extensions possible; see below)
     >>> jsonpath_expr = parse('foo[*].baz')
 
 
@@ -152,15 +151,15 @@ Field specifiers ( *field* ):
 
 Array specifiers ( *idx* ):
 
-+-----------------------------------------+---------------------------------------------------------------------------------------+
-| Syntax                                  | Meaning                                                                               |
-+=========================================+=======================================================================================+
-| ``[``\ *n*\ ``]``                       | array index (may be comma-separated list)                                             |
-+-----------------------------------------+---------------------------------------------------------------------------------------+
-| ``[``\ *start*\ ``?:``\ *end*\ ``?]``   | array slicing (note that *step* is unimplemented only due to lack of need thus far)   |
-+-----------------------------------------+---------------------------------------------------------------------------------------+
-| ``[*]``                                 | any array index                                                                       |
-+-----------------------------------------+---------------------------------------------------------------------------------------+
++-------------------------------------------------------+------------------------------------------------------------+
+| Syntax                                                | Meaning                                                    |
++=======================================================+============================================================+
+| ``[``\ *n*\ ``]``                                     | array index (may be comma-separated list)                  |
++-------------------------------------------------------+------------------------------------------------------------+
+| ``[``\ *start*\ ``?:``\ *end*\ ``?:``\ *step*\ ``?]`` | array slicing; *start*, *end*, and *step* are all optional |
++-------------------------------------------------------+------------------------------------------------------------+
+| ``[*]``                                               | any array index                                            |
++-------------------------------------------------------+------------------------------------------------------------+
 
 Programmatic JSONPath
 ---------------------
@@ -239,8 +238,8 @@ To use the extensions below you must import from ``jsonpath_ng.ext``.
 |              | (or). ``&&`` binds more tightly than ``||``,     |
 |              | and parentheses group.                           |
 |              |                                                  |
-|              | Properties can only be compared to static        |
-|              | values.                                          |
+|              | Properties can be compared to literal values     |
+|              | or to singular queries, such as ``@.a == $.b``.  |
 +--------------+--------------------------------------------------+
 | arithmetic   | - ``$.foo + "_" + $.bar``                        |
 | (-+*/)       | - ``$.foo * 12``                                 |
