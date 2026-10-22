@@ -39,9 +39,9 @@ DOC = {"i": [{"a": 1}, {"b": 2}, {"a": 5}, {"a": None}]}
             [{"a": 1}, {"b": 2}, {"a": 5}],
             id="null",
         ),
-        pytest.param("$.i[?@.a != 5 & @.b == 2]", [{"b": 2}], id="with-other-clause"),
+        pytest.param("$.i[?@.a != 5 && @.b == 2]", [{"b": 2}], id="with-other-clause"),
         pytest.param(
-            "$.i[?@.a != 5 & @.b != 2]",
+            "$.i[?@.a != 5 && @.b != 2]",
             [{"a": 1}, {"a": None}],
             id="two-ne",
         ),
