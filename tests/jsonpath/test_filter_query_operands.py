@@ -150,7 +150,7 @@ def test_current_node_compared_to_current_node(path, datum, expected_values):
             id="missing-root-query-equals-missing-member",
         ),
         pytest.param(
-            "$.items[?(@.v == $.ref.v & @.w == $.ref.v)]",
+            "$.items[?(@.v == $.ref.v && @.w == $.ref.v)]",
             {"ref": {"v": 1}, "items": [{"v": 1, "w": 1}, {"v": 1, "w": 2}]},
             [{"v": 1, "w": 1}],
             id="combined-with-and",
@@ -527,12 +527,10 @@ def test_root_in_query_operand_is_the_document_root():
 @pytest.mark.parametrize(
     "path, expected",
     [
-        pytest.param("$[?(@.v == $.ref.v)]", "`this`.v == $.ref.v", id="root"),
-        pytest.param("$[?(@.a == @.b)]", "`this`.a == `this`.b", id="current"),
-        pytest.param(
-            "$[?(@.a != @['b'][0])]", "`this`.a != `this`.b.[0]", id="segments"
-        ),
-        pytest.param("$[?(@.a == $)]", "`this`.a == $", id="bare-root"),
+        pytest.param("$[?(@.v == $.ref.v)]", "@.v == $.ref.v", id="root"),
+        pytest.param("$[?(@.a == @.b)]", "@.a == @.b", id="current"),
+        pytest.param("$[?(@.a != @['b'][0])]", "@.a != @.b[0]", id="segments"),
+        pytest.param("$[?(@.a == $)]", "@.a == $", id="bare-root"),
     ],
 )
 def test_query_operand_is_rendered_as_a_query(path, expected):

@@ -6,20 +6,21 @@ import typing
 import warnings
 
 import jsonpath_ng._ply.yacc
+from jsonpath_ng._deprecations import _warn_about_deprecated_syntax
 from jsonpath_ng.exceptions import JsonPathParserError
 from jsonpath_ng.jsonpath import Child
 from jsonpath_ng.jsonpath import Descendants
 from jsonpath_ng.jsonpath import Fields
 from jsonpath_ng.jsonpath import Index
-from jsonpath_ng.jsonpath import Intersect
 from jsonpath_ng.jsonpath import JSONPath
 from jsonpath_ng.jsonpath import Parent
 from jsonpath_ng.jsonpath import Root
 from jsonpath_ng.jsonpath import Slice
 from jsonpath_ng.jsonpath import This
-from jsonpath_ng.jsonpath import Union
 from jsonpath_ng.jsonpath import Where
 from jsonpath_ng.jsonpath import WhereNot
+from jsonpath_ng.jsonpath import _Intersect
+from jsonpath_ng.jsonpath import _Union
 from jsonpath_ng.lexer import JsonPathLexer
 
 if typing.TYPE_CHECKING:
@@ -116,9 +117,17 @@ class JsonPathParser:
         elif op == "wherenot":
             p[0] = WhereNot(left, right)
         elif op == "|":
-            p[0] = Union(left, right)
+            _warn_about_deprecated_syntax(
+                "The `|` (union) operator is deprecated. "
+                "It will be removed in version 2.0.0."
+            )
+            p[0] = _Union(left, right)
         elif op == "&":
-            p[0] = Intersect(left, right)
+            _warn_about_deprecated_syntax(
+                "The `&` (intersection) operator is deprecated. "
+                "It will be removed in version 2.0.0."
+            )
+            p[0] = _Intersect(left, right)
 
     def p_jsonpath_fields(self, p: _Production) -> None:
         "jsonpath : fields_or_any"

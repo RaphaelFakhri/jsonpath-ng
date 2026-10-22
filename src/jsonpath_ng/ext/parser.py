@@ -25,6 +25,7 @@ from .. import Root
 from .. import This
 from .. import lexer
 from .. import parser
+from .._deprecations import _warn_about_deprecated_syntax
 from .._ply_types import _Production
 from ..exceptions import JsonPathParserError
 from . import arithmetic as _arithmetic
@@ -40,10 +41,19 @@ if typing.TYPE_CHECKING:
     _ExtValue: typing.TypeAlias = (
         _Value
         | list[_filter.Expression]
+        | list[JSONPath]
         | tuple[JSONPath, bool]
         | list[tuple[JSONPath, bool]]
     )
     _ExtProduction: typing.TypeAlias = _GenericProduction[_ExtValue]
+
+
+def _conjunction(expressions: list[JSONPath]) -> JSONPath:
+    """Combine the expressions of a conjunction into a single expression."""
+
+    if len(expressions) == 1:
+        return expressions[0]
+    return _filter.And(expressions)
 
 
 class ExtendedJsonPathLexer(lexer.JsonPathLexer):
@@ -54,10 +64,14 @@ class ExtendedJsonPathLexer(lexer.JsonPathLexer):
     tokens = (
         ["BOOL", "NULL"]
         + lexer.JsonPathLexer.tokens
-        + ["FILTER_OP", "SORT_DIRECTION", "FLOAT"]
+        + ["FILTER_OP", "SORT_DIRECTION", "FLOAT", "AND", "OR"]
     )
 
     t_FILTER_OP = r"=~|==?|<=|>=|!=|<|>"
+    # RFC 9535 section 2.3.5.1 logical operators.
+    # PLY tries a string rule before it tries a literal, so `&&` is never `&` `&`.
+    t_AND = r"&&"
+    t_OR = r"\|\|"
 
     def t_BOOL(self, t: _RuleToken) -> _RuleToken:
         r"true(?![a-zA-Z0-9_@\-])|false(?![a-zA-Z0-9_@\-])"
@@ -220,19 +234,57 @@ class ExtendedJsonPathParser(parser.JsonPathParser):
         "expression : '!' jsonpath"
         p[0] = _filter.Expression(p[2], p[1], None)
 
-    def p_expressions_expression(self, p: _ExtProduction) -> None:
-        "expressions : expression"
+    # RFC 9535 section 2.3.5.1: `&&` binds more tightly than `||`.
+    #
+    #   expressions      (`||` of one or more conjunctions)
+    #   and_expressions  (`&&` of one or more operands)
+    #   operand          (an expression, or a parenthesized `expressions`)
+    #
+    # A conjunction is a list of expressions, as it has always been in `Filter`.
+    # The parser creates an `Or` node for `||`, and an `And` node only for a
+    # conjunction that is an operand of `||`.
+
+    def p_expressions_and_expressions(self, p: _ExtProduction) -> None:
+        "expressions : and_expressions"
+        p[0] = p[1]
+
+    def p_expressions_or(self, p: _ExtProduction) -> None:
+        "expressions : expressions OR and_expressions"
+        left = typing.cast(list[JSONPath], p[1])
+        right = _conjunction(typing.cast(list[JSONPath], p[3]))
+        if len(left) == 1 and isinstance(left[0], _filter.Or):
+            # Extend the `Or` that the previous step created, which nothing else
+            # references yet, instead of copying its operands for every term.
+            left[0].operands.extend(
+                right.operands if isinstance(right, _filter.Or) else [right]
+            )
+            p[0] = left
+        else:
+            p[0] = [_filter.Or([_conjunction(left), right])]
+
+    def p_and_expressions_operand(self, p: _ExtProduction) -> None:
+        "and_expressions : operand"
+        p[0] = p[1]
+
+    def p_and_expressions_and(self, p: _ExtProduction) -> None:
+        "and_expressions : and_expressions AND operand"
+        p[0] = typing.cast(list[JSONPath], p[1]) + typing.cast(list[JSONPath], p[3])
+
+    def p_and_expressions_ampersand(self, p: _ExtProduction) -> None:
+        "and_expressions : and_expressions '&' operand"
+        _warn_about_deprecated_syntax(
+            "The `&` operator in filters is deprecated. "
+            "It will be removed in version 2.0.0. "
+            "Use `&&` instead."
+        )
+        p[0] = typing.cast(list[JSONPath], p[1]) + typing.cast(list[JSONPath], p[3])
+
+    def p_operand_expression(self, p: _ExtProduction) -> None:
+        "operand : expression"
         p[0] = [p[1]]
 
-    def p_expressions_and(self, p: _ExtProduction) -> None:
-        "expressions : expressions '&' expressions"
-        # TODO(sileht): implements '|'
-        p[0] = typing.cast(list[_filter.Expression], p[1]) + typing.cast(
-            list[_filter.Expression], p[3]
-        )
-
-    def p_expressions_parens(self, p: _ExtProduction) -> None:
-        "expressions : '(' expressions ')'"
+    def p_operand_parens(self, p: _ExtProduction) -> None:
+        "operand : '(' expressions ')'"
         p[0] = p[2]
 
     def p_filter(self, p: _ExtProduction) -> None:

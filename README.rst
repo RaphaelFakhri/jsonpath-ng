@@ -94,13 +94,11 @@ Using the extended parser:
 JSONPath Syntax
 ---------------
 
-The JSONPath syntax supported by this library includes some additional
-features and omits some problematic features (those that make it
-unportable). In particular, some new operators such as ``|`` and
-``where`` are available, and parentheses are used for grouping not for
-callbacks into Python, since with these changes the language is not
-trivially associative. Also, fields may be quoted whether or not they
-are contained in brackets.
+The JSONPath syntax supported by this library includes some additional features.
+In particular, some new operators such as ``where`` are available,
+and parentheses are used for grouping not for callbacks into Python,
+since with these changes the language is not trivially associative.
+Also, fields may be quoted whether or not they are contained in brackets.
 
 Atomic expressions:
 
@@ -134,8 +132,6 @@ Jsonpath operators:
 | *jsonpath1* ``where`` *jsonpath2*    | Any nodes matching *jsonpath1* with a child matching *jsonpath2*                  |
 +--------------------------------------+-----------------------------------------------------------------------------------+
 | *jsonpath1* ``wherenot`` *jsonpath2* | Any nodes matching *jsonpath1* with a child not matching *jsonpath2*              |
-+--------------------------------------+-----------------------------------------------------------------------------------+
-| *jsonpath1* ``|`` *jsonpath2*        | Any nodes matching the union of *jsonpath1* and *jsonpath2*                       |
 +--------------------------------------+-----------------------------------------------------------------------------------+
 
 Field specifiers ( *field* ):
@@ -202,7 +198,7 @@ Extras
 Extensions
 ----------
 
-To use the extensions below you must import from `jsonpath_ng.ext`.
+To use the extensions below you must import from ``jsonpath_ng.ext``.
 
 +--------------+--------------------------------------------------+
 | name         | Example                                          |
@@ -228,7 +224,8 @@ To use the extensions below you must import from `jsonpath_ng.ext`.
 | filter       | - ``$.objects[?(@.some_field > 5)]``             |
 |              | - ``$.objects[?(@.some_field = "foobar")]``      |
 |              | - ``$.objects[?(@.some_field =~ "foobar")]``     |
-|              | - ``$.objects[?(@.some_field > 5 & other < 2)]`` |
+|              | - ``$.objects[?@.cow > 5 && @.cat < 2]``         |
+|              | - ``$.objects[?@.cow > 5 || @.cat < 2]``         |
 |              | - ``$.objects[?!@.some_field]``                  |
 |              |                                                  |
 |              | Supported operators:                             |
@@ -238,7 +235,9 @@ To use the extensions below you must import from `jsonpath_ng.ext`.
 |              | - Regex match: ``=~``                            |
 |              | - Existence negation: ``!``                      |
 |              |                                                  |
-|              | Combine multiple criteria with ``&``.            |
+|              | Combine criteria with ``&&`` (and) and ``||``    |
+|              | (or). ``&&`` binds more tightly than ``||``,     |
+|              | and parentheses group.                           |
 |              |                                                  |
 |              | Properties can only be compared to static        |
 |              | values.                                          |
