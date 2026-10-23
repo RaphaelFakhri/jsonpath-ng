@@ -122,6 +122,7 @@ class JsonPathLexer:
         r"'"
         t.value = t.lexer.string_value
         t.type = "ID"
+        t.quoted = True
         t.lexer.string_value = None
         t.lexer.pop_state()
         return t
@@ -155,6 +156,7 @@ class JsonPathLexer:
         r'"'
         t.value = t.lexer.string_value
         t.type = "ID"
+        t.quoted = True
         t.lexer.string_value = None
         t.lexer.pop_state()
         return t

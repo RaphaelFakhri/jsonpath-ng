@@ -549,20 +549,10 @@ def test_query_operand_is_parsed_as_a_query():
     )
 
 
-@pytest.mark.parametrize(
-    "path",
-    [
-        pytest.param("$[?(@.a == foo)]", id="identifier"),
-        pytest.param('$[?(@.a == "foo")]', id="quoted"),
-    ],
-)
-def test_bare_word_on_the_right_is_still_a_string(path):
-    """A bare word has always been a string, because a field name could be a path.
+def test_quoted_string_on_the_right_is_a_string():
+    """Only a right-hand side that starts with `@` or `$` is a query."""
 
-    Only a right-hand side that starts with `@` or `$` is a query.
-    """
-
-    expression = jsonpath_ng.ext.parse(path).right.expressions[0]
+    expression = jsonpath_ng.ext.parse('$[?(@.a == "foo")]').right.expressions[0]
 
     assert expression.value == "foo"
 
@@ -591,3 +581,16 @@ def test_right_hand_side_must_be_a_singular_query(path):
 
     with pytest.raises(JsonPathParserError):
         jsonpath_ng.ext.parse(path)
+
+
+# The tests below exercise deprecated syntax.
+# Delete everything below this comment when v2.0.0 is released.
+
+
+def test_bare_word_on_the_right_is_still_a_string():
+    """A bare word has always been a string, because a field name could be a path."""
+
+    with pytest.warns(DeprecationWarning, match="unquoted word"):
+        expression = jsonpath_ng.ext.parse("$[?(@.a == foo)]").right.expressions[0]
+
+    assert expression.value == "foo"
