@@ -10,7 +10,7 @@ permissions: {}
 
 env:
   PYTHON_VERSION: '3.14'
-  UV_VERSION: '0.12.13'
+  UV_VERSION: '0.13.5'
   BUILD_VERSION: '1.6.1'
   SETUPTOOLS_VERSION: '84.0.0'
 

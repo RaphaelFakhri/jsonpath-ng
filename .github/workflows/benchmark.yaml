@@ -19,7 +19,7 @@ concurrency:
 
 env:
   PYTHON_VERSION: '3.14'
-  UV_VERSION: '0.12.13'
+  UV_VERSION: '0.13.5'
 
 jobs:
   benchmark:
