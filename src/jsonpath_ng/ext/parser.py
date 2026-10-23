@@ -180,6 +180,14 @@ class ExtendedJsonPathParser(parser.JsonPathParser):
                 raise JsonPathParserError(
                     "The regex operator requires a literal pattern, not a query"
                 )
+            if p.slice[3].type == "ID" and not getattr(p.slice[3], "quoted", False):
+                # RFC 9535 has no unquoted strings; `jsonpath-ng` has always
+                # treated a bare word as the string of the same name.
+                _warn_about_deprecated_syntax(
+                    "An unquoted word as a comparison operand is deprecated. "
+                    "Support for unquoted words will be removed in version 2.0.0. "
+                    f"Write `{right!r}` instead."
+                )
             if p.slice[3].type == "NULL":
                 # The literal `null` compares as JSON null, which `Expression`
                 # represents as `None`. The regex operator is not part of RFC 9535
