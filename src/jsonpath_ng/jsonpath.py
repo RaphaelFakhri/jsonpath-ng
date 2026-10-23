@@ -1008,15 +1008,26 @@ class Slice(JSONPath):
         return data
 
     def filter(self, fn: FilterFunction, data: Container) -> Container:
-        while True:
-            length = len(data)
-            for datum in self.find(data):
-                data = typing.cast(Container, datum.path.filter(fn, data))
-                if len(data) < length:
-                    break
+        if isinstance(data, dict):
+            if self.start is None and self.end is None and self.step is None:
+                for key, value in list(data.items()):
+                    if fn(value):
+                        del data[key]
+            return data
 
-            if length == len(data):
-                break
+        if not isinstance(data, list) or self.step == 0:
+            return data
+
+        # Resolve the positions against the original data before removing anything,
+        # then remove them all at once so that the work stays linear.
+        positions = range(len(data))[self.start : self.end : self.step]
+        positions_to_remove = {position for position in positions if fn(data[position])}
+        if positions_to_remove:
+            data[:] = [
+                value
+                for position, value in enumerate(data)
+                if position not in positions_to_remove
+            ]
         return data
 
     def __str__(self) -> str:
