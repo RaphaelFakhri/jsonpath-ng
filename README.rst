@@ -72,13 +72,14 @@ Basic examples:
 
     # A handy extension: named operators like `parent`
     >>> [match.value for match in parse('a.*.b.`parent`.c').find({'a': {'x': {'b': 1, 'c': 'number one'}, 'y': {'b': 2, 'c': 'number two'}}})]
-    ['number two', 'number one']
+    ['number one', 'number two']
 
     # You can also build expressions directly quite easily
     >>> from jsonpath_ng.jsonpath import Fields
     >>> from jsonpath_ng.jsonpath import Slice
 
-    >>> jsonpath_expr_direct = Fields('foo').child(Slice('*')).child(Fields('baz'))  # This is equivalent
+    >>> parse('foo[*].baz') == Fields('foo').child(Slice()).child(Fields('baz'))
+    True
 
 
 Using the extended parser:
@@ -86,21 +87,17 @@ Using the extended parser:
 ..  code:: pycon
 
     >>> from jsonpath_ng.ext import parse
-
-    # A robust parser, not just a regex. (Makes powerful extensions possible; see below)
     >>> jsonpath_expr = parse('foo[*].baz')
 
 
 JSONPath Syntax
 ---------------
 
-The JSONPath syntax supported by this library includes some additional
-features and omits some problematic features (those that make it
-unportable). In particular, some new operators such as ``|`` and
-``where`` are available, and parentheses are used for grouping not for
-callbacks into Python, since with these changes the language is not
-trivially associative. Also, fields may be quoted whether or not they
-are contained in brackets.
+The JSONPath syntax supported by this library includes some additional features.
+In particular, some new operators such as ``where`` are available,
+and parentheses are used for grouping not for callbacks into Python,
+since with these changes the language is not trivially associative.
+Also, fields may be quoted whether or not they are contained in brackets.
 
 Atomic expressions:
 
@@ -135,8 +132,6 @@ Jsonpath operators:
 +--------------------------------------+-----------------------------------------------------------------------------------+
 | *jsonpath1* ``wherenot`` *jsonpath2* | Any nodes matching *jsonpath1* with a child not matching *jsonpath2*              |
 +--------------------------------------+-----------------------------------------------------------------------------------+
-| *jsonpath1* ``|`` *jsonpath2*        | Any nodes matching the union of *jsonpath1* and *jsonpath2*                       |
-+--------------------------------------+-----------------------------------------------------------------------------------+
 
 Field specifiers ( *field* ):
 
@@ -156,15 +151,15 @@ Field specifiers ( *field* ):
 
 Array specifiers ( *idx* ):
 
-+-----------------------------------------+---------------------------------------------------------------------------------------+
-| Syntax                                  | Meaning                                                                               |
-+=========================================+=======================================================================================+
-| ``[``\ *n*\ ``]``                       | array index (may be comma-separated list)                                             |
-+-----------------------------------------+---------------------------------------------------------------------------------------+
-| ``[``\ *start*\ ``?:``\ *end*\ ``?]``   | array slicing (note that *step* is unimplemented only due to lack of need thus far)   |
-+-----------------------------------------+---------------------------------------------------------------------------------------+
-| ``[*]``                                 | any array index                                                                       |
-+-----------------------------------------+---------------------------------------------------------------------------------------+
++-------------------------------------------------------+------------------------------------------------------------+
+| Syntax                                                | Meaning                                                    |
++=======================================================+============================================================+
+| ``[``\ *n*\ ``]``                                     | array index (may be comma-separated list)                  |
++-------------------------------------------------------+------------------------------------------------------------+
+| ``[``\ *start*\ ``?:``\ *end*\ ``?:``\ *step*\ ``?]`` | array slicing; *start*, *end*, and *step* are all optional |
++-------------------------------------------------------+------------------------------------------------------------+
+| ``[*]``                                               | any array index                                            |
++-------------------------------------------------------+------------------------------------------------------------+
 
 Programmatic JSONPath
 ---------------------
@@ -202,7 +197,7 @@ Extras
 Extensions
 ----------
 
-To use the extensions below you must import from `jsonpath_ng.ext`.
+To use the extensions below you must import from ``jsonpath_ng.ext``.
 
 +--------------+--------------------------------------------------+
 | name         | Example                                          |
@@ -228,7 +223,8 @@ To use the extensions below you must import from `jsonpath_ng.ext`.
 | filter       | - ``$.objects[?(@.some_field > 5)]``             |
 |              | - ``$.objects[?(@.some_field = "foobar")]``      |
 |              | - ``$.objects[?(@.some_field =~ "foobar")]``     |
-|              | - ``$.objects[?(@.some_field > 5 & other < 2)]`` |
+|              | - ``$.objects[?@.cow > 5 && @.cat < 2]``         |
+|              | - ``$.objects[?@.cow > 5 || @.cat < 2]``         |
 |              | - ``$.objects[?!@.some_field]``                  |
 |              |                                                  |
 |              | Supported operators:                             |
@@ -238,10 +234,12 @@ To use the extensions below you must import from `jsonpath_ng.ext`.
 |              | - Regex match: ``=~``                            |
 |              | - Existence negation: ``!``                      |
 |              |                                                  |
-|              | Combine multiple criteria with ``&``.            |
+|              | Combine criteria with ``&&`` (and) and ``||``    |
+|              | (or). ``&&`` binds more tightly than ``||``,     |
+|              | and parentheses group.                           |
 |              |                                                  |
-|              | Properties can only be compared to static        |
-|              | values.                                          |
+|              | Properties can be compared to literal values     |
+|              | or to singular queries, such as ``@.a == $.b``.  |
 +--------------+--------------------------------------------------+
 | arithmetic   | - ``$.foo + "_" + $.bar``                        |
 | (-+*/)       | - ``$.foo * 12``                                 |

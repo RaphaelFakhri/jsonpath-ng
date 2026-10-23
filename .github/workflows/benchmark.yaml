@@ -19,7 +19,7 @@ concurrency:
 
 env:
   PYTHON_VERSION: '3.14'
-  UV_VERSION: '0.12.13'
+  UV_VERSION: '0.13.5'
 
 jobs:
   benchmark:
@@ -44,12 +44,12 @@ jobs:
           python-version: "${{ env.PYTHON_VERSION }}"
 
       - name: 'Setup uv'
-        uses: 'astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4' # v10.1.0
+        uses: 'astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7' # v10.2.0
         with:
           version: "${{ env.UV_VERSION }}"
 
       - name: 'Run benchmarks'
-        uses: 'CodSpeedHQ/action@373d6868929f444bc08d901fd0eb0ad52a8875ea' # v5.2.1
+        uses: 'CodSpeedHQ/action@c4fd08a3a159bd0cc208da1e0edf32b8c47d75e5' # v5.4.0
         with:
           mode: 'simulation'
           run: 'uv run --with pytest-codspeed pytest --codspeed'

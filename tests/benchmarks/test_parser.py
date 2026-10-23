@@ -13,5 +13,5 @@ def test_instantiation(benchmark):
 @benchmark_group
 def test_parse(benchmark):
     instance = jsonpath_ng.parser.JsonPathParser()
-    string = "$.a['x'][0] wherenot y | *[1:10:3]"
+    string = "$.a['x'][0] wherenot y where *[1:10:3]"
     benchmark(lambda: instance.parse(string))

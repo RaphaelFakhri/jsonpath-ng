@@ -16,11 +16,15 @@ import re
 import typing as t
 import warnings
 
+from .. import Child
 from .. import DatumInContext
+from .. import Descendants
 from .. import Fields
 from .. import Index
 from .. import JSONPath
 from .. import Root
+from .. import This
+from .arithmetic import Operation
 
 StringOperator: t.TypeAlias = t.Literal["!=", "==", "=", "<=", "<", ">=", ">"]
 
@@ -111,6 +115,39 @@ def _compare(op: StringOperator | t.Literal["=~"], left: t.Any, right: t.Any) ->
     return EQUALITY_ONLY_OPERATOR_MAP[op](_equal(left, right))
 
 
+def _query_to_str(path: t.Any, leading: bool = True) -> str:
+    """Serialize a query that is used inside a filter.
+
+    RFC 9535 section 2.3.5 starts a filter's relative query with `@`,
+    so the current node is written as `@` where the query begins.
+    Elsewhere, the current node can only be written as "`this`",
+    which is not RFC 9535 syntax and should not be promoted
+    to a position where it looks like it is.
+
+    Bracketed segments are written without a leading `.`,
+    as required by the singular queries that can be compared to a value.
+    """
+
+    if isinstance(path, This):
+        return "@" if leading else str(path)
+    if isinstance(path, Child):
+        left = _query_to_str(path.left, leading)
+        right = _query_to_str(path.right, False)
+        if right.startswith("["):
+            # Indices, slices, filters, and sorts are bracketed, with no period.
+            return f"{left}{right}"
+        return f"{left}.{right}"
+    if isinstance(path, Descendants):
+        return (
+            f"({_query_to_str(path.left, leading)}..{_query_to_str(path.right, False)})"
+        )
+    if isinstance(path, Operation):
+        left = _query_to_str(path.left)
+        right = _query_to_str(path.right)
+        return f"{left} {path.op_symbol} {right}"
+    return str(path)
+
+
 class Filter(JSONPath):
     """The JSONQuery filter"""
 
@@ -139,6 +176,8 @@ class Filter(JSONPath):
                 paths_to_visit.append(path.target)
                 if isinstance(path.value, JSONPath):
                     paths_to_visit.append(path.value)
+            elif isinstance(path, _BooleanOperation):
+                paths_to_visit.extend(path.operands)
             else:
                 if (left := getattr(path, "left", None)) is not None:
                     paths_to_visit.append(left)
@@ -224,8 +263,19 @@ class Filter(JSONPath):
     def __repr__(self):
         return f"{self.__class__.__name__}({self.expressions!r})"
 
-    def __str__(self):
-        return "[?%s]" % self.expressions
+    def __str__(self) -> str:
+        # A filter's expressions form a conjunction, which binds more tightly than `||`.
+        # A lone disjunction needs no parentheses.
+        group = len(self.expressions) > 1
+        parts = (
+            (
+                f"({expression})"
+                if group and isinstance(expression, Or)
+                else str(expression)
+            )
+            for expression in self.expressions
+        )
+        return f"[?{' && '.join(parts)}]"
 
     def __eq__(self, other):
         return isinstance(other, Filter) and self.expressions == other.expressions
@@ -253,8 +303,9 @@ class Expression(JSONPath):
         # otherwise only the case for the existence test and negation handled above.
         null_comparison = self.op is not None and self.value is None
         if not found:
-            # RFC 9535 section 2.3.5.2.2: a missing value is not equal to `null`.
-            return [wrapped_datum] if null_comparison and self.op == "!=" else []
+            # RFC 9535 section 2.3.5.2.2: an empty nodelist is not equal to any value,
+            # including `null`, so only `!=` is true when the member is missing.
+            return [wrapped_datum] if self.op == "!=" else []
         if self.op is None:
             return found
 
@@ -276,13 +327,13 @@ class Expression(JSONPath):
                 if EQUALITY_ONLY_OPERATOR_MAP[self.op](value is self.value):
                     result.append(data)
                 continue
-            if type(self.value) is int and isinstance(value, str):
-                try:
-                    value = int(value)
-                except ValueError:
-                    continue
-
-            if OPERATOR_MAP[self.op](value, self.value):
+            # RFC 9535 section 2.3.5.2.2: a string is never equal to a number,
+            # and only two numbers or two strings are ordered.
+            if self.op == "=~":
+                matched = OPERATOR_MAP["=~"](value, self.value)
+            else:
+                matched = _compare(self.op, value, self.value)
+            if matched:
                 result.append(data)
 
         return result
@@ -324,8 +375,94 @@ class Expression(JSONPath):
             )
 
     def __str__(self):
+        target = _query_to_str(self.target)
         if self.op is None:
-            return "%s" % self.target
+            return target
+        if self.op == "!":
+            return f"!{target}"
+
+        value = self.value
+        if isinstance(value, JSONPath):
+            rendered = _query_to_str(value)
+        elif value is None:
+            rendered = "null"
+        elif isinstance(value, bool):
+            rendered = "true" if value else "false"
+        elif isinstance(value, str):
+            # Always quote strings.
+            # This ensures that strings like "true", "10", and "a b" can parse again.
+            rendered = repr(value)
         else:
-            value = "null" if self.value is None else self.value
-            return f"{self.target} {self.op} {value}"
+            rendered = str(value)
+        return f"{target} {self.op} {rendered}"
+
+
+class _BooleanOperation(JSONPath):
+    """The base class for the logical operators of an RFC 9535 filter.
+
+    The operands are stored in a flat list, rather than as nested binary nodes,
+    so that a long chain like `a || b || c || ...` does not become a deeply
+    nested tree. `||` and `&&` are associative, so no meaning is lost.
+    """
+
+    op: t.ClassVar[str]
+
+    def __init__(self, operands: t.Iterable[JSONPath]) -> None:
+        self.operands: list[JSONPath] = []
+        for operand in operands:
+            if type(operand) is type(self):
+                # Operands are already flat, so one level is all that can nest.
+                self.operands.extend(operand.operands)  # type: ignore[attr-defined]
+            else:
+                self.operands.append(operand)
+
+    def __eq__(self, other: object) -> bool:
+        return (
+            type(self) is type(other)
+            and self.operands == other.operands  # type: ignore[attr-defined]
+        )
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}({self.operands!r})"
+
+    def _operand_to_str(self, operand: JSONPath) -> str:
+        raise NotImplementedError
+
+    def __str__(self) -> str:
+        return f" {self.op} ".join(
+            self._operand_to_str(operand) for operand in self.operands
+        )
+
+
+class And(_BooleanOperation):
+    """The RFC 9535 logical AND, `&&`, of filter expressions.
+
+    The parser only creates this for a conjunction that is an operand of `||`.
+    Elsewhere, a conjunction is a `Filter`'s list of expressions.
+    """
+
+    op = "&&"
+
+    def find(self, datum):
+        if all(operand.find(datum) for operand in self.operands):
+            return [DatumInContext.wrap(datum)]
+        return []
+
+    def _operand_to_str(self, operand: JSONPath) -> str:
+        # `||` binds less tightly than `&&`.
+        return f"({operand})" if isinstance(operand, Or) else str(operand)
+
+
+class Or(_BooleanOperation):
+    """The RFC 9535 logical OR, `||`, of filter expressions."""
+
+    op = "||"
+
+    def find(self, datum):
+        if any(operand.find(datum) for operand in self.operands):
+            return [DatumInContext.wrap(datum)]
+        return []
+
+    def _operand_to_str(self, operand: JSONPath) -> str:
+        # `&&` binds more tightly, so an `And` operand needs no parentheses.
+        return str(operand)

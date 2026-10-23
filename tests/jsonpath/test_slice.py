@@ -87,3 +87,129 @@ def test_filter_wildcard_removes_object_members(parse):
     data = {"o": {"x": 1, "y": 2}}
 
     assert parse("$.o[*]").filter(lambda value: value == 1, data) == {"o": {"y": 2}}
+
+
+@pytest.mark.parametrize(
+    "query", ("$[::0]", "$[1:3:0]", "$[:2:0]", "$[1::0]", "$[-1:-3:0]")
+)
+@parsers
+def test_find_step_zero_selects_nothing(parse, query):
+    # RFC 9535 section 2.3.4.2.2: "When step = 0, no elements are selected".
+    assert parse(query).find([1, 2, 3, 4]) == []
+
+
+@parsers
+def test_find_step_zero_selects_nothing_from_empty_array(parse):
+    assert parse("$[::0]").find([]) == []
+
+
+def test_find_step_zero_selects_nothing_from_tuples():
+    assert jsonpath_ng.Slice(step=0).find((1, 2, 3)) == []
+
+
+@parsers
+def test_update_step_zero_changes_nothing(parse):
+    assert parse("$[::0]").update([1, 2, 3], 9) == [1, 2, 3]
+
+
+@parsers
+def test_filter_step_zero_removes_nothing(parse):
+    assert parse("$[::0]").filter(lambda value: True, [1, 2, 3]) == [1, 2, 3]
+
+
+@parsers
+def test_find_step_zero_is_not_an_error_after_a_child(parse):
+    data = {"a": [1, 2, 3]}
+
+    assert parse("$.a[::0]").find(data) == []
+    assert [match.value for match in parse("$.a[::1]").find(data)] == [1, 2, 3]
+
+
+@pytest.mark.parametrize(
+    "query, expected",
+    (
+        pytest.param("$[::]", [1, 2, 3, 4], id="step-omitted-with-colons"),
+        pytest.param("$[::1]", [1, 2, 3, 4], id="step-1"),
+        pytest.param("$[::2]", [1, 3], id="step-2"),
+        pytest.param("$[::-1]", [4, 3, 2, 1], id="step-negative-1"),
+    ),
+)
+@parsers
+def test_find_step_defaults_to_one(parse, query, expected):
+    # RFC 9535 section 2.3.4.1: "The default value for step is 1."
+    # An omitted step must not be confused with an explicit step of 0.
+    assert [match.value for match in parse(query).find([1, 2, 3, 4])] == expected
+
+
+@pytest.mark.parametrize(
+    "query, expected",
+    (
+        pytest.param("$[*]", [], id="wildcard"),
+        pytest.param("$[::2]", [2, 4, 6], id="step-2"),
+        pytest.param("$[1::2]", [1, 3, 5], id="start-and-step-2"),
+        pytest.param("$[1:4]", [1, 5, 6], id="start-and-end"),
+        pytest.param("$[-2:]", [1, 2, 3, 4], id="negative-start"),
+        pytest.param("$[::-2]", [1, 3, 5], id="negative-step"),
+        pytest.param("$[4:1:-1]", [1, 2, 6], id="negative-step-start-and-end"),
+        pytest.param("$[10:]", [1, 2, 3, 4, 5, 6], id="start-out-of-range"),
+    ),
+)
+@parsers
+def test_filter_removes_every_selected_element(parse, query, expected):
+    data = [1, 2, 3, 4, 5, 6]
+
+    assert parse(query).filter(lambda value: True, data) is data
+    assert data == expected
+
+
+@parsers
+def test_filter_removes_only_the_elements_that_match_the_function(parse):
+    data = [1, 2, 3, 4, 5, 6]
+
+    assert parse("$[1:5]").filter(lambda value: value % 2 == 0, data) is data
+    assert data == [1, 3, 5, 6]
+
+
+@pytest.mark.parametrize(
+    "query, expected",
+    (
+        pytest.param("$[*]", [1, 2, 3, 4], id="wildcard"),
+        pytest.param("$[1:]", [2, 3, 4], id="start"),
+        pytest.param("$[::-1]", [4, 3, 2, 1], id="negative-step"),
+    ),
+)
+@parsers
+def test_filter_function_sees_each_original_element_once_in_selection_order(
+    parse, query, expected
+):
+    data = [1, 2, 3, 4]
+    seen = []
+
+    def fn(value):
+        seen.append(value)
+        return value % 2 == 0
+
+    assert parse(query).filter(fn, data) is data
+    assert seen == expected
+
+
+@parsers
+def test_filter_wildcard_function_sees_each_object_member_once(parse):
+    data = {"x": 1, "y": 2, "z": 3}
+    seen = []
+
+    def fn(value):
+        seen.append(value)
+        return value == 2
+
+    assert parse("$[*]").filter(fn, data) is data
+    assert seen == [1, 2, 3]
+    assert data == {"x": 1, "z": 3}
+
+
+@parsers
+def test_filter_in_compound_queries(parse):
+    data = {"a": [1, 2, 3, 4], "b": [[1, 2, 3], [4, 5, 6]], "c": {"d": 1}}
+
+    assert parse("$..[::2]").filter(lambda value: isinstance(value, int), data) is data
+    assert data == {"a": [2, 4], "b": [[2], [5]], "c": {"d": 1}}

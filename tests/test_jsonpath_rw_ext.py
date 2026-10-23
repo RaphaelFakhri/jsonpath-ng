@@ -134,7 +134,7 @@ test_cases = (
         id="filter_gt",
     ),
     pytest.param(
-        "objects[?cow>5&cat=2]",
+        "objects[?cow>5&&cat=2]",
         {
             "objects": [
                 {"cow": 8, "cat": 2},
@@ -367,24 +367,6 @@ test_cases = (
         },
         [160000],
         id="real_life_example1",
-    ),
-    pytest.param(
-        "payload.(id|(resource.id))",
-        {"payload": {"id": "foobar"}},
-        ["foobar"],
-        id="real_life_example2",
-    ),
-    pytest.param(
-        "payload.id|(resource.id)",
-        {"payload": {"resource": {"id": "foobar"}}},
-        ["foobar"],
-        id="real_life_example3",
-    ),
-    pytest.param(
-        "payload.id|(resource.id)",
-        {"payload": {"id": "yes", "resource": {"id": "foobar"}}},
-        ["yes", "foobar"],
-        id="real_life_example4",
     ),
     pytest.param(
         "payload.`sub(/(foo\\\\d+)\\\\+(\\\\d+bar)/, \\\\2-\\\\1)`",
@@ -946,3 +928,50 @@ def test_invalid_hyphenation_in_key():
     # This discrepancy needs to be resolved.
     with pytest.raises(JsonPathParserError):
         parser.parse("foo.-baz")
+
+
+# The cases below exercise deprecated syntax.
+# Delete everything below this comment when v2.0.0 is released.
+
+deprecated_syntax_test_cases = (
+    pytest.param(
+        "payload.(id|(resource.id))",
+        {"payload": {"id": "foobar"}},
+        ["foobar"],
+        id="union_real_life_example2",
+    ),
+    pytest.param(
+        "payload.id|(resource.id)",
+        {"payload": {"resource": {"id": "foobar"}}},
+        ["foobar"],
+        id="union_real_life_example3",
+    ),
+    pytest.param(
+        "payload.id|(resource.id)",
+        {"payload": {"id": "yes", "resource": {"id": "foobar"}}},
+        ["yes", "foobar"],
+        id="union_real_life_example4",
+    ),
+    pytest.param(
+        "objects[?cow>5&cat=2]",
+        {
+            "objects": [
+                {"cow": 8, "cat": 2},
+                {"cow": 7, "cat": 2},
+                {"cow": 2, "cat": 2},
+                {"cow": 5, "cat": 3},
+                {"cow": 8, "cat": 3},
+            ]
+        },
+        [{"cow": 8, "cat": 2}, {"cow": 7, "cat": 2}],
+        id="filter_and_ampersand",
+    ),
+)
+
+
+@pytest.mark.parametrize("path, data, expected_values", deprecated_syntax_test_cases)
+def test_values_with_deprecated_syntax(path, data, expected_values):
+    with pytest.warns(DeprecationWarning, match="version 2.0.0"):
+        query = parser.parse(path)
+
+    assert_value_equality(query.find(data), expected_values)

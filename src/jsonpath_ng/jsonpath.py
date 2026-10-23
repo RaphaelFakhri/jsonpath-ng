@@ -3,7 +3,10 @@ from __future__ import annotations
 import logging
 import re
 import typing
+import warnings
 
+from jsonpath_ng._deprecations import _DEPRECATED_CLASS_NAMES
+from jsonpath_ng._deprecations import _deprecated_class_message
 from jsonpath_ng.exceptions import JSONPathError
 
 # Get logger name
@@ -390,13 +393,14 @@ class Child(JSONPath):
         )
 
     def __str__(self) -> str:
-        # Special case: If the right side is a `SortedThis` instance,
+        # Special case: If the right side is a `SortedThis` or `Filter` instance,
         # do not inject a period between the left and right sides.
         # Adding a period would corrupt the syntax and prevent re-parsing.
         # Current module design creates circular imports, so imports happen here.
+        from .ext.filter import Filter
         from .ext.iterable import SortedThis
 
-        if isinstance(self.right, SortedThis):
+        if isinstance(self.right, (SortedThis, Filter)):
             return f"{self.left}{self.right}"
 
         return f"{self.left}.{self.right}"
@@ -641,7 +645,7 @@ class Descendants(JSONPath):
         return hash((self.left, self.right))
 
 
-class Union(JSONPath):
+class _Union(JSONPath):
     """
     JSONPath that returns the union of the results of each match.
     This is pretty shoddily implemented for now. The nicest semantics
@@ -664,7 +668,7 @@ class Union(JSONPath):
 
     def __eq__(self, other: typing.Any) -> bool:
         return (
-            isinstance(other, Union)
+            isinstance(other, _Union)
             and self.left == other.left
             and self.right == other.right
         )
@@ -679,7 +683,7 @@ class Union(JSONPath):
         return f"{self.left} | {self.right}"
 
 
-class Intersect(JSONPath):
+class _Intersect(JSONPath):
     """
     JSONPath for bits that match *both* patterns.
 
@@ -703,7 +707,7 @@ class Intersect(JSONPath):
 
     def __eq__(self, other: typing.Any) -> bool:
         return (
-            isinstance(other, Intersect)
+            isinstance(other, _Intersect)
             and self.left == other.left
             and self.right == other.right
         )
@@ -816,9 +820,11 @@ class Fields(JSONPath):
     def __str__(self) -> str:
         # Enclose fields in quotes as needed.
         # This is a conservative check, and is biased toward quoting fields.
+        # An `@` may begin a name only if a letter or underscore follows it.
+        # Otherwise, the extended parser reads the `@` as the current node.
         rendered_fields: list[str] = []
         for field in self.fields:
-            if re.match(r"^[A-Za-z_@][A-Za-z0-9_@-]*$", field):
+            if re.match(r"^@?[A-Za-z_][A-Za-z0-9_@-]*$", field):
                 rendered_fields.append(field)
             else:
                 rendered_fields.append(f"{field!r}")
@@ -982,6 +988,9 @@ class Slice(JSONPath):
         if not isinstance(datum.value, (list, tuple)):
             return []
 
+        if self.step == 0:
+            return []
+
         if is_wildcard:
             return [
                 DatumInContext(child, path=Index(i), context=datum)
@@ -999,15 +1008,26 @@ class Slice(JSONPath):
         return data
 
     def filter(self, fn: FilterFunction, data: Container) -> Container:
-        while True:
-            length = len(data)
-            for datum in self.find(data):
-                data = typing.cast(Container, datum.path.filter(fn, data))
-                if len(data) < length:
-                    break
+        if isinstance(data, dict):
+            if self.start is None and self.end is None and self.step is None:
+                for key, value in list(data.items()):
+                    if fn(value):
+                        del data[key]
+            return data
 
-            if length == len(data):
-                break
+        if not isinstance(data, list) or self.step == 0:
+            return data
+
+        # Resolve the positions against the original data before removing anything,
+        # then remove them all at once so that the work stays linear.
+        positions = range(len(data))[self.start : self.end : self.step]
+        positions_to_remove = {position for position in positions if fn(data[position])}
+        if positions_to_remove:
+            data[:] = [
+                value
+                for position, value in enumerate(data)
+                if position not in positions_to_remove
+            ]
         return data
 
     def __str__(self) -> str:
@@ -1074,3 +1094,10 @@ def _clean_list_keys(struct_: Container) -> Container:
             for key, value in struct_.items():
                 struct_[key] = _clean_list_keys(value)
     return struct_
+
+
+def __getattr__(name: str) -> typing.Any:
+    if name in _DEPRECATED_CLASS_NAMES:
+        warnings.warn(_deprecated_class_message(name), DeprecationWarning, stacklevel=2)
+        return globals()[f"_{name}"]
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
