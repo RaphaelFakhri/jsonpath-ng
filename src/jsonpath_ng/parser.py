@@ -6,6 +6,10 @@ import typing
 import warnings
 
 import jsonpath_ng._ply.yacc
+
+# PLY imports the pre-generated table by name, which is invisible to PyInstaller.
+# Import it explicitly so that it's included in bundles.
+import jsonpath_ng._ply_tables.parser_table  # noqa: F401
 from jsonpath_ng._deprecations import _warn_about_deprecated_syntax
 from jsonpath_ng.exceptions import JsonPathParserError
 from jsonpath_ng.jsonpath import Child

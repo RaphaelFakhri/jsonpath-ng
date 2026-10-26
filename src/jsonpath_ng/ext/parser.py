@@ -26,6 +26,11 @@ from .. import This
 from .. import lexer
 from .. import parser
 from .._deprecations import _warn_about_deprecated_syntax
+
+# PLY imports the pre-generated tables by name, which is invisible to PyInstaller.
+# Import them explicitly so that they're included in bundles.
+from .._ply_tables import ext_lexer_table  # noqa: F401
+from .._ply_tables import ext_parser_table  # noqa: F401
 from .._ply_types import _Production
 from ..exceptions import JsonPathParserError
 from . import arithmetic as _arithmetic
