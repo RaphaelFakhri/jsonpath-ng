@@ -40,6 +40,9 @@ test = [
     "pytest-codspeed",
     "pytest-randomly",
 ]
+pyinstaller = [
+    "pyinstaller",
+]
 dev = [
     { include-group = "test" },
     "prek",
@@ -128,6 +131,11 @@ testpaths = [
 ]
 addopts = [
     "--color=yes",
+    # Building executables is slow; run these with `-m pyinstaller` instead.
+    "-m=not pyinstaller",
+]
+markers = [
+    "pyinstaller: Test PyInstaller builds and app runs",
 ]
 filterwarnings = [
     # Escalate warnings to errors.
