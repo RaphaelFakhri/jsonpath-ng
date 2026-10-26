@@ -155,3 +155,63 @@ def test_star_import_does_not_export_union_or_intersect(name):
 def test_unknown_attributes_still_raise_attribute_error(module):
     with pytest.raises(AttributeError, match="NoSuchName"):
         module.NoSuchName
+
+
+BARE_WORD_MESSAGE = r"An unquoted word as a comparison operand is deprecated"
+
+
+@pytest.mark.parametrize("operator", ["==", "!=", "<", "<=", ">", ">=", "=~"])
+def test_bare_word_comparison_operand_is_deprecated(operator):
+    with pytest.warns(DeprecationWarning, match=BARE_WORD_MESSAGE) as record:
+        jsonpath_ng.ext.parse(f"$[?@.a {operator} foo]")
+
+    assert len(record) == 1
+
+
+def test_bare_word_deprecation_suggests_the_quoted_string():
+    with pytest.warns(DeprecationWarning, match=r"Write `'foo'` instead") as record:
+        jsonpath_ng.ext.parse("$[?@.a == foo]")
+
+    assert len(record) == 1
+
+
+def test_bare_word_deprecation_warns_once_per_bare_word():
+    with pytest.warns(DeprecationWarning, match=BARE_WORD_MESSAGE) as record:
+        jsonpath_ng.ext.parse("$[?@.a == foo && @.b == bar || @.c == 'baz']")
+
+    assert len(record) == 2
+
+
+def test_bare_word_deprecation_is_attributed_to_the_caller():
+    with pytest.warns(DeprecationWarning, match=BARE_WORD_MESSAGE) as record:
+        jsonpath_ng.ext.parse("$[?@.a == foo]")
+
+    assert record[0].filename == __file__
+
+
+def test_bare_word_comparison_operand_still_means_a_string():
+    with pytest.warns(DeprecationWarning, match=BARE_WORD_MESSAGE):
+        query = jsonpath_ng.ext.parse("$[?@.a == foo]")
+
+    results = query.find([{"a": "foo"}, {"a": "bar"}, {"a": 1}])
+    assert_value_equality(results, [{"a": "foo"}])
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        pytest.param("$[?@.a == 'foo']", id="single-quoted"),
+        pytest.param('$[?@.a == "foo"]', id="double-quoted"),
+        pytest.param("$[?@.a =~ 'f.*']", id="quoted-pattern"),
+        pytest.param("$[?@.a == 1]", id="integer"),
+        pytest.param("$[?@.a == 1.5]", id="float"),
+        pytest.param("$[?@.a == true]", id="true"),
+        pytest.param("$[?@.a == false]", id="false"),
+        pytest.param("$[?@.a == null]", id="null"),
+        pytest.param("$[?@.a == @.b]", id="current-node-query"),
+        pytest.param("$[?@.a == $.b]", id="root-query"),
+    ],
+)
+def test_comparison_operands_that_are_not_bare_words_do_not_warn(query):
+    # `pytest` turns every warning into an error.
+    jsonpath_ng.ext.parse(query)

@@ -6,6 +6,10 @@ import typing
 import warnings
 
 import jsonpath_ng._ply.lex
+
+# PLY imports the pre-generated table by name, which is invisible to PyInstaller.
+# Import it explicitly so that it's included in bundles.
+import jsonpath_ng._ply_tables.lexer_table  # noqa: F401
 from jsonpath_ng.exceptions import JsonPathLexerError
 
 if typing.TYPE_CHECKING:
@@ -122,6 +126,7 @@ class JsonPathLexer:
         r"'"
         t.value = t.lexer.string_value
         t.type = "ID"
+        t.quoted = True
         t.lexer.string_value = None
         t.lexer.pop_state()
         return t
@@ -155,6 +160,7 @@ class JsonPathLexer:
         r'"'
         t.value = t.lexer.string_value
         t.type = "ID"
+        t.quoted = True
         t.lexer.string_value = None
         t.lexer.pop_state()
         return t

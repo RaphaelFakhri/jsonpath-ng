@@ -35,6 +35,7 @@ class _RuleToken:
     lexer: _Lexer
     lexpos: int
     lineno: int
+    quoted: bool
     type: str
     value: float | str | None
 

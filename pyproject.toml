@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "jsonpath-ng"
-version = "1.13.0"
+version = "1.14.0"
 description="A final implementation of JSONPath for Python that aims to be standard compliant, including arithmetic and binary comparison operators and providing clear AST for metaprogramming."
 authors = [
     {name = "Tomas Aparicio", email = "tomas@aparicio.me"},
@@ -39,6 +39,9 @@ test = [
     "pytest",
     "pytest-codspeed",
     "pytest-randomly",
+]
+pyinstaller = [
+    "pyinstaller",
 ]
 dev = [
     { include-group = "test" },
@@ -128,6 +131,11 @@ testpaths = [
 ]
 addopts = [
     "--color=yes",
+    # Building executables is slow; run these with `-m pyinstaller` instead.
+    "-m=not pyinstaller",
+]
+markers = [
+    "pyinstaller: Test PyInstaller builds and app runs",
 ]
 filterwarnings = [
     # Escalate warnings to errors.
