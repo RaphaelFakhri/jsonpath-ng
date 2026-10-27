@@ -237,20 +237,26 @@ class Filter(JSONPath):
         return self._update_with_root(data, val, data)
 
     def _update_with_root(self, data, val, root):
-        if type(data) is list:
-            if self._references_root():
-                # Evaluate `$` against the root, as `find()` does.
-                parent = self._datum(data, root)
-                for index, item in enumerate(data):
-                    candidate = DatumInContext(item, path=Index(index), context=parent)
-                    if all(
-                        expression.find(candidate) for expression in self.expressions
-                    ):
-                        self._set(data, index, val)
-            else:
-                for index, item in enumerate(data):
-                    if all(expression.find(item) for expression in self.expressions):
-                        self._set(data, index, val)
+        if isinstance(data, dict):
+            candidates = list(data.items())
+            make_path = Fields
+        elif type(data) is list:
+            candidates = enumerate(data)
+            make_path = Index
+        else:
+            return data
+
+        if self._references_root():
+            # Evaluate `$` against the root, as `find()` does.
+            parent = self._datum(data, root)
+            for key, item in candidates:
+                candidate = DatumInContext(item, path=make_path(key), context=parent)
+                if all(expression.find(candidate) for expression in self.expressions):
+                    self._set(data, key, val)
+        else:
+            for key, item in candidates:
+                if all(expression.find(item) for expression in self.expressions):
+                    self._set(data, key, val)
         return data
 
     @staticmethod

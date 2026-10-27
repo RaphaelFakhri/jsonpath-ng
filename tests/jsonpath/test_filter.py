@@ -42,6 +42,33 @@ def test_filter_returns_lists(datum, expected_values):
 
 
 @pytest.mark.parametrize(
+    "path, datum, expected",
+    [
+        pytest.param("$[?@ > 1]", [1, 2, 3], [1, "X", "X"], id="list"),
+        pytest.param(
+            "$[?@ > 1]",
+            {"a": 1, "b": 2, "c": 3},
+            {"a": 1, "b": "X", "c": "X"},
+            id="dict",
+        ),
+        pytest.param(
+            "$[?@ > $.a]",
+            {"a": 1, "b": 2, "c": 3},
+            {"a": 1, "b": "X", "c": "X"},
+            id="dict-root-reference",
+        ),
+        pytest.param("$[?@ > 1]", 2, 2, id="int"),
+    ],
+)
+def test_update_matches_find(path, datum, expected):
+    """Verify that update() replaces the same values that find() selects."""
+
+    result = jsonpath_ng.ext.parse(path).update(copy.deepcopy(datum), "X")
+
+    assert result == expected
+
+
+@pytest.mark.parametrize(
     "path, datum, expected_values",
     [
         pytest.param(
@@ -134,7 +161,7 @@ NESTED_ROOT_DOC = {"k": 1, "o": {"p": [1, 2], "q": [[3]]}}
         pytest.param(
             "$.o..[?($.k == 1)]",
             NESTED_ROOT_DOC,
-            {"k": 1, "o": {"p": ["X", "X"], "q": ["X"]}},
+            {"k": 1, "o": {"p": "X", "q": "X"}},
             id="descendants",
         ),
         pytest.param(
